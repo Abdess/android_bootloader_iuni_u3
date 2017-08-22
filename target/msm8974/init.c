@@ -50,6 +50,11 @@
 #include <platform/clock.h>
 #include <platform/gpio.h>
 #include <stdlib.h>
+/*Gionee luliya 2013-8-27 add for pwrkey vibrator bigin */
+#if defined(CONFIG_GN_Q_BSP_PWM_PWRKEY_VIBRATOR_SUPPORT)
+#include "pwrkey_vibrator.h"
+#endif
+/*Gionee luliya 2013-8-27 add for pwrkey vibrator end */ 
 
 enum hw_platform_subtype
 {
@@ -61,6 +66,12 @@ static void set_sdc_power_ctrl();
 
 static unsigned int target_id;
 static uint32_t pmic_ver;
+
+/*Gionee luliya 2013-8-29 add for pwrkey check bigin */
+#if defined(CONFIG_GN_Q_BSP_LK_PWRKEY_CHECK_SUPPORT)
+void lk_pwrkey_check(void);
+#endif
+/*Gionee luliya 2013-8-29 add for pwrkey check end */
 
 #if MMC_SDHCI_SUPPORT
 struct mmc_device *dev;
@@ -337,6 +348,64 @@ void target_mmc_caps(struct mmc_host *host)
 }
 #endif
 
+/*Gionee luliya 2013-8-29 add for pwrkey check bigin */
+#if defined(CONFIG_GN_Q_BSP_LK_PWRKEY_CHECK_SUPPORT)
+void lk_pwrkey_check(void)
+{
+	uint8_t warm_reset_reason = 0;
+	uint8_t pwr_reason = 0;
+	uint8_t data = 0;
+	uint8_t tic = 0;
+	bool ps_hold = FALSE;
+
+	warm_reset_reason = pm8x41_reg_read(0x80A);
+
+	if(warm_reset_reason & 0x02)
+	{
+		ps_hold = TRUE;
+	}
+	pwr_reason = pm8x41_reg_read(0x808);
+	
+
+	while((pwr_reason & 0x80) && (!ps_hold))
+	{
+
+		for(tic = 0; tic < 2; tic++)
+		{
+			data = pm8x41_reg_read(0x810);
+
+			if(!(data&0x01))
+			{
+				shutdown_device();
+				dprintf(INFO, "shutdown\n");
+			}
+			mdelay(900);
+
+		}
+		if(tic >= 2)
+			break;
+	}
+}
+#endif
+/*Gionee luliya 2013-8-29 add for pwrkey check end */
+
+/*Gionee zhengwei 2014-01-06 add for rtc alarm begin */
+#if defined(CONFIG_GN_Q_BSP_LK_RTC_ALARM_SUPPORT)
+int is_rtc_alarm_set(void)
+{
+    uint8_t pwr_reason = 0;
+    int ret = 0;
+
+    pwr_reason = pm8x41_reg_read(0x808);
+    if (pwr_reason & 0x04)
+        ret = 1;
+    else
+        ret = 0;
+
+    return ret;
+}
+#endif
+/*Gionee zhengwei 2014-01-06 add for rtc alarm end */
 
 void target_init(void)
 {
@@ -348,6 +417,24 @@ void target_init(void)
 	pmic_ver = pm8x41_get_pmic_rev();
 
 	target_keystatus();
+/*Gionee luliya 2013-8-29 add for pwrkey check bigin */
+#if defined(CONFIG_GN_Q_BSP_LK_PWRKEY_CHECK_SUPPORT)
+	dprintf(INFO, "Lk PowerKey Check: Start\n");
+	lk_pwrkey_check();
+	dprintf(INFO, "Lk PowerKey Check: End\n");
+#endif
+/*Gionee luliya 2013-8-29 add for pwrkey check end */
+/*Gionee luliya add begin*/
+#if defined(CONFIG_GN_Q_BSP_PWM_PWRKEY_VIBRATOR_SUPPORT)
+	dprintf(INFO, "Vibrator Init: Start\n");
+	pwm_vibrator_init();
+	dprintf(INFO, "Vibrator Init: End\n");
+#else if defined(CONFIG_GN_Q_BSP_CLK_PWRKEY_VIBRATOR_SUPPORT)
+	dprintf(INFO, "Vibrator Init: Start\n");
+	clk_vibrator_init();
+	dprintf(INFO, "Vibrator Init: End\n");
+#endif
+/*Gionee luliya add end*/
 
 	if (target_use_signed_kernel())
 		target_crypto_init_params();
@@ -667,6 +754,15 @@ int target_cont_splash_screen()
 	return splash_screen;
 }
 
+//Gionee wudp 2013-07-10 add for support poweroff chg begin
+#if defined(CONFIG_GN_Q_BSP_PM_POWEROFF_CHG_SUPPORT)  
+uint8_t pm8x41_get_warm_reset_reason() 
+{ 
+	return pm8x41_reg_read(0x80A); 
+} 
+#endif
+//Gionee wudp 2013-07-10 add for support poweroff chg end
+
 void target_force_cont_splash_disable(uint8_t override)
 {
 	splash_override = override;
@@ -679,8 +775,15 @@ unsigned target_pause_for_battery_charge(void)
         /* This function will always return 0 to facilitate
          * automated testing/reboot with usb connected.
          * uncomment if this feature is needed */
-	/* if ((pon_reason == USB_CHG) || (pon_reason == DC_CHG))
-		return 1;*/
+		 
+//Gionee wudp 2013-07-05 add for support poweroff chg begin
+#if defined(CONFIG_GN_Q_BSP_PM_POWEROFF_CHG_SUPPORT)  
+	uint8_t warm_reset_reason = pm8x41_get_warm_reset_reason();
+    dprintf(INFO, "func:%s  warm_reset_reason=%d pon_reason=%d\n", __func__, warm_reset_reason, pon_reason);
+    if (((pon_reason == USB_CHG) || (pon_reason == DC_CHG)) && (warm_reset_reason == 0))
+		return 1;
+#endif
+//Gionee wudp 2013-07-05 add for support poweroff chg end
 
 	return 0;
 }

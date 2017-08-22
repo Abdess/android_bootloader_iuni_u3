@@ -135,8 +135,13 @@ uint32_t mdss_dsi_read_panel_signature(uint32_t panel_signature)
 	data = ntohl(*lp);
 	data = data >> 8;
 	response_value = data;
+	dprintf(INFO, "data = %d\n");
+	dprintf(INFO, "data = %d\n",panel_signature);
 	if (response_value != panel_signature)
-		ret = response_value;
+		{
+		dprintf(INFO, "fffffffff\n");
+		//ret = response_value;
+		}
 
 exit_read_signature:
 	/* Keep the non detectable panel at the end and set panel signature 0xFFFF */
@@ -175,7 +180,7 @@ int mdss_dual_dsi_cmd_dma_trigger_for_panel()
 
 	writel((readl(MIPI_DSI1_BASE + INT_CTRL) | 0x01000001),
 			MIPI_DSI1_BASE + INT_CTRL);
-	dprintf(SPEW, "Panel CMD: command mode dma tested successfully\n");
+	dprintf(INFO, "Panel CMD: command mode dma tested successfully\n");
 #endif
 	return status;
 }
@@ -202,7 +207,7 @@ int dsi_cmd_dma_trigger_for_panel()
 	}
 
 	writel((readl(DSI_INT_CTRL) | 0x01000001), DSI_INT_CTRL);
-	dprintf(SPEW, "Panel CMD: command mode dma tested successfully\n");
+	dprintf(INFO, "Panel CMD: command mode dma tested successfully\n");
 	return status;
 }
 
@@ -319,7 +324,8 @@ int mipi_dsi_cmds_tx(struct mipi_dsi_cmd *cmds, int count)
 		if (cm->wait)
 			mdelay(cm->wait);
 		else
-			udelay(80);
+			//udelay(80);
+			mdelay(1);
 		cm++;
 	}
 	return ret;

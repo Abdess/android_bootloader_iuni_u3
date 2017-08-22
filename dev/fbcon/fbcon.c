@@ -38,6 +38,12 @@
 
 #include "font5x12.h"
 
+/*Gionee xiangzhong 2014-03-08 add for prompt fastboot mode begin*/
+#if defined(CONFIG_GN_Q_BSP_FASTBOOT_MODE_PROMPT_SUPPORT)
+#include <gn_fastboot_image.h>
+#endif
+/*Gionee xiangzhong 2014-03-08 add for prompt fastboot mode end*/
+
 struct pos {
 	int x;
 	int y;
@@ -129,6 +135,31 @@ static void fbcon_set_colors(unsigned bg, unsigned fg)
 	BGCOLOR = bg;
 	FGCOLOR = fg;
 }
+
+/*Gionee xiangzhong 2014-03-08 add for prompt fastboot mode begin*/
+#if defined(CONFIG_GN_Q_BSP_FASTBOOT_MODE_PROMPT_SUPPORT)
+void show_fastboot_mode(void)
+{
+	int i;
+	int bytes_per_bpp = ((config->bpp) / 8);
+	unsigned image_base;
+
+	image_base = (config->height - FASTBOOT_HEIGHT) * config->width * bytes_per_bpp;
+
+   	for (i = 0; i < FASTBOOT_HEIGHT; i++)
+        {
+		memcpy(config->base + image_base + ((i * (config->width)) * bytes_per_bpp),
+			gn_fastboot_buffer + (i * FASTBOOT_WIDTH * bytes_per_bpp),FASTBOOT_WIDTH * bytes_per_bpp);
+	}
+}
+void gn_fastboot_mode(void)
+{
+	dprintf(INFO,"fastboot display\n\n");
+	show_fastboot_mode();
+	msm_display_on();
+}
+#endif
+/*Gionee xiangzhong 2014-03-08 add for prompt fastboot mode end*/
 
 void fbcon_putc(char c)
 {

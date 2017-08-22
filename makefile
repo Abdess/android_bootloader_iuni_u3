@@ -71,6 +71,11 @@ LDFLAGS :=
 CFLAGS += -ffunction-sections -fdata-sections
 LDFLAGS += -gc-sections
 
+#Gionee lingfen 2012-12-4 merge gionee start
+-include $(PWD)/../../../$(GN_BOOTABLE_TMP_FILE)
+CFLAGS += $(GN_CFLAGS)
+CPPFLAGS += $(GN_CFLAGS)
+#Gionee lingfen 2012-12-4 merge gionee end
 # top level rule
 all:: $(OUTBIN) $(OUTELF).lst $(OUTELF).debug.lst $(OUTELF).sym $(OUTELF).size APPSBOOTHEADER
 

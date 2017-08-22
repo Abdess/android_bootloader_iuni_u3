@@ -52,4 +52,10 @@ struct mmc_device *target_mmc_device();
 
 bool target_display_panel_node(char *pbuf, uint16_t buf_size);
 
+/*Gionee zhengwei 2014-01-06 add for rtc alarm begin */
+#if defined(CONFIG_GN_Q_BSP_LK_RTC_ALARM_SUPPORT)
+int is_rtc_alarm_set(void);
+#endif
+/*Gionee zhengwei 2014-01-06 add for rtc alarm end */
+
 #endif

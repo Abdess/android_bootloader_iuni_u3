@@ -45,7 +45,13 @@ static void fastboot_notify(struct udc_gadget *gadget, unsigned event);
 static struct udc_endpoint *fastboot_endpoints[2];
 
 static struct udc_device surf_udc_device = {
-	.vendor_id    = 0x18d1,
+//Gionee liujiang 2013-08-20 modify for gionee VID start
+#if defined (CONFIG_GN_Q_BSP_USB_SUPPORT)
+	.vendor_id	= 0x271d,
+#else
+	.vendor_id	= 0x18d1,
+#endif
+//Gionee liujiang 2013-08-20 modify for gionee VID end
 	.product_id   = 0xD00D,
 	.version_id   = 0x0100,
 	.manufacturer = "Google",

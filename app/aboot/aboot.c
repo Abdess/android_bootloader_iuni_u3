@@ -68,7 +68,11 @@
 #include "board.h"
 
 #include "scm.h"
-
+/*Gionee xiangzhong 2014-05-29 add for lk splash logo begin*/
+#if defined(CONFIG_GN_Q_BSP_LCD_LK_SPLASH_SUPPORT)
+extern void enabld_backlight(void);
+#endif
+/*Gionee xiangzhong 2014-05-29 add for lk splash logo end*/
 extern  bool target_use_signed_kernel(void);
 extern void platform_uninit(void);
 extern void target_uninit(void);
@@ -106,6 +110,11 @@ static const char *loglevel         = " quiet";
 static const char *battchg_pause = " androidboot.mode=charger";
 static const char *auth_kernel = " androidboot.authorized_kernel=true";
 static const char *secondary_gpt_enable = " gpt";
+/*Gionee zhengwei 2014-01-06 add for rtc alarm begin */
+#if defined(CONFIG_GN_Q_BSP_LK_RTC_ALARM_SUPPORT)
+static const char *androidboot_mode_rtc_alarm = " androidboot.mode=rtc_alarm";
+#endif
+/*Gionee zhengwei 2014-01-06 add for rtc alarm end*/
 
 static const char *baseband_apq     = " androidboot.baseband=apq";
 static const char *baseband_msm     = " androidboot.baseband=msm";
@@ -199,6 +208,11 @@ unsigned char *update_cmdline(const char * cmdline)
 	unsigned char *cmdline_final = NULL;
 	int pause_at_bootup = 0;
 	bool gpt_exists = partition_gpt_exists();
+/*Gionee zhengwei 2014-01-06 add for rtc alarm begin */
+#if defined(CONFIG_GN_Q_BSP_LK_RTC_ALARM_SUPPORT)
+	int boot_mode_is_rtc_alarm = 0;
+#endif
+/*Gionee zhengwei 2014-01-06 add for rtc alarm end */
 
 	if (cmdline && cmdline[0]) {
 		cmdline_len = strlen(cmdline);
@@ -219,8 +233,14 @@ unsigned char *update_cmdline(const char * cmdline)
 		cmdline_len += strlen(ffbm_mode_string);
 		/* reduce kernel console messages to speed-up boot */
 		cmdline_len += strlen(loglevel);
+//Gionee wudp 2013-12-19 modify for support poweroff chg begin
+#if defined(CONFIG_GN_Q_BSP_PM_POWEROFF_CHG_SUPPORT)  
+	} else if (target_pause_for_battery_charge()) {
+#else
 	} else if (device.charger_screen_enabled &&
 			target_pause_for_battery_charge()) {
+#endif
+//Gionee wudp 2013-12-19 modify for support poweroff chg end
 		pause_at_bootup = 1;
 		cmdline_len += strlen(battchg_pause);
 	}
@@ -275,6 +295,14 @@ unsigned char *update_cmdline(const char * cmdline)
 		cmdline_len += strlen(display_cmdline);
 		cmdline_len += strlen(display_panel_buf);
 	}
+/*Gionee zhengwei 2014-01-06 add for rtc alarm begin */
+#if defined(CONFIG_GN_Q_BSP_LK_RTC_ALARM_SUPPORT)
+	boot_mode_is_rtc_alarm = is_rtc_alarm_set();
+	if(boot_mode_is_rtc_alarm){
+		cmdline_len += strlen(androidboot_mode_rtc_alarm);
+	}
+#endif
+/*Gionee zhengwei 2014-01-06 add for rtc alarm end */
 
 	if (cmdline_len > 0) {
 		const char *src;
@@ -293,6 +321,16 @@ unsigned char *update_cmdline(const char * cmdline)
 			have_cmdline = 1;
 			while ((*dst++ = *src++));
 		}
+	/*Gionee zhengwei 2014-01-06 add for rtc alarm begin */
+	#if defined(CONFIG_GN_Q_BSP_LK_RTC_ALARM_SUPPORT)
+		if(boot_mode_is_rtc_alarm){
+			src = androidboot_mode_rtc_alarm;
+			if (have_cmdline) --dst;
+			have_cmdline = 1;
+			while ((*dst++ = *src++));
+		}
+	#endif
+	/*Gionee zhengwei 2014-01-06 add for rtc alarm end */
 
 		src = usb_sn_cmdline;
 		if (have_cmdline) --dst;
@@ -677,7 +715,13 @@ int boot_linux_from_mmc(void)
                     return -1;
 		}
 	}
-
+/*Gionee xiangzhong 2014-05-29 add for lk splash logo begin*/
+#if defined(CONFIG_GN_Q_BSP_LCD_LK_SPLASH_SUPPORT)
+	display_image_on_screen();
+	msm_display_on();
+	enabld_backlight();
+#endif
+/*Gionee xiangzhong 2014-05-29 add for lk splash logo end*/
 	if (mmc_read(ptn + offset, (unsigned int *) buf, page_size)) {
 		dprintf(CRITICAL, "ERROR: Cannot read boot image header\n");
                 return -1;
@@ -2296,6 +2340,20 @@ void aboot_init(const struct app_descriptor *app)
 
 	/* dump partition table for debug info */
 	partition_dump();
+
+/*Gionee xiangzhong 2014-05-29 add for lk splash logo begin*/
+#if defined(CONFIG_GN_Q_BSP_LCD_LK_SPLASH_SUPPORT)
+	display_image_on_screen();
+	msm_display_on();
+	enabld_backlight();
+#endif
+/*Gionee xiangzhong 2014-05-29 add for lk splash logo end*/
+
+/*Gionee xiangzhong 2014-03-08 add for propmt fastboot mode begin*/
+#if defined(CONFIG_GN_Q_BSP_FASTBOOT_MODE_PROMPT_SUPPORT)
+	gn_fastboot_mode();
+#endif
+/*Gionee xiangzhong 2014-03-08 add for propmt fastboot mode end*/
 
 	/* initialize and start fastboot */
 	fastboot_init(target_get_scratch_address(), target_get_max_flash_size());

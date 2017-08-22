@@ -775,10 +775,19 @@ static uint32_t mmc_set_bus_width(struct sdhci_host *host,
  */
 static uint8_t mmc_card_supports_hs400_mode(struct mmc_card *card)
 {
+//gionee, chuqf, to support hs400, begin
+#if defined(CONFIG_GN_Q_BSP_LK_DISABLE_EMMC_HS400)
+	if (card->ext_csd[MMC_DEVICE_TYPE] & MMC_HS_HS400_MODE)
+		return 0;
+	else
+		return 0;
+#else
 	if (card->ext_csd[MMC_DEVICE_TYPE] & MMC_HS_HS400_MODE)
 		return 1;
 	else
 		return 0;
+#endif
+//gionee, chuqf, to support hs400, end
 }
 
 /*

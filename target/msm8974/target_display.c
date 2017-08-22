@@ -43,8 +43,22 @@
 #include "include/panel.h"
 #include "include/display_resource.h"
 
+#include <i2c_qup.h>
+#include <blsp_qup.h>
+
 static struct msm_fb_panel_data panel;
 static uint8_t edp_enable;
+
+/*Gionee xiangzhong 2014-04-10 add for tps65132 begin*/
+#if defined(CONFIG_GN_Q_BSP_LCD_TPS65132_SUPPORT)
+extern int lcd_vendor;
+/*first element is register addr,the second is the vol*/
+char vol_value_truly_p[] = {0x00,0x0a};  
+char vol_value_truly_n[] = {0x01,0x0a};  
+char vol_value_sharp_p[] = {0x00,0x11};  
+char vol_value_sharp_n[] = {0x01,0x11};  
+#endif
+/*Gionee xiangzhong 2014-04-10 add for tps65132 end*/
 
 #define HFPLL_LDO_ID 12
 
@@ -202,7 +216,44 @@ int target_panel_clock(uint8_t enable, struct msm_panel_info *pinfo)
 
 	return NO_ERROR;
 }
+/*Gionee xiangzhong 2014-04-10 add for tps65132 begin*/
+#if defined(CONFIG_GN_Q_BSP_LCD_TPS65132_SUPPORT)
+void tps65132_set_vol(char data_buf[])
+{
+	struct qup_i2c_dev  *dev;
+	struct i2c_msg msg_buf_0[] = {
+		{0x3e, I2C_M_WR, 2, data_buf}
+	};
 
+	dev = qup_blsp_i2c_init(BLSP_ID_2, QUP_ID_4, 100000, 19200000);
+	if (!dev) {
+		dprintf(CRITICAL, "Failed initializing I2c\n");
+		return;
+	}
+
+	qup_i2c_xfer(dev, msg_buf_0, 1);
+}
+#endif
+void tps65132_power_on(void)
+{
+	if(lcd_vendor == 2)  //for truly lcd
+		tps65132_set_vol(vol_value_truly_p);
+	else if(lcd_vendor == 3)
+		tps65132_set_vol(vol_value_sharp_p); //for sharp lcd
+	else
+		dprintf(INFO, "lcd vendor detect error");
+	mdelay(1);
+
+	gpio_set(tps_enable_gpio.pin_id, 2);
+	if(lcd_vendor == 2)  
+		tps65132_set_vol(vol_value_truly_n);
+	else if(lcd_vendor == 3) 
+		tps65132_set_vol(vol_value_sharp_n); //for sharp lcd
+	else
+		dprintf(INFO, "lcd vendor detect error");
+	mdelay(1);
+}
+/*Gionee xiangzhong 2014-04-10 add for tps65132 end*/
 /* Pull DISP_RST_N high to get panel out of reset */
 int target_panel_reset(uint8_t enable, struct panel_reset_sequence *resetseq,
 					struct msm_panel_info *pinfo)
@@ -215,15 +266,33 @@ int target_panel_reset(uint8_t enable, struct panel_reset_sequence *resetseq,
 		.direction = PM_GPIO_DIR_OUT,
 		.output_buffer = PM_GPIO_OUT_CMOS,
 		.out_strength = PM_GPIO_OUT_DRIVE_MED,
+/*Gionee xiangzhong 2014-04-10 add for modify reset vol to 1.8v begin*/
+#if defined(CONFIG_GN_Q_BSP_LCD_RESET_VOL_1V8_SUPPORT)
+		.vin_sel = 2,  //output = 1.8v
+#endif
+/*Gionee xiangzhong 2014-04-10 add for modify reset vol to 1.8v end*/
 	};
 
 	if (platform_id == MSM8974AC)
 		if ((hardware_id == HW_PLATFORM_MTP)
 		    || (hardware_id == HW_PLATFORM_LIQUID))
+ /*Gionee xiangzhong 2014-01-16 add for msm8974ac begin*/
+#if defined(CONFIG_GN_Q_BSP_LCD_MSM8974AC_SUPPORT)
+			rst_gpio = 19;
+#else
 			rst_gpio = 20;
+#endif
+ /*Gionee xiangzhong 2014-01-16 add for msm8974ac end*/
 
-	dprintf(SPEW, "platform_id: %u, rst_gpio: %u\n",
+	dprintf(INFO, "platform_id: %u, rst_gpio: %u\n",
 				platform_id, rst_gpio);
+
+/*Gionee xiangzhong 2014-04-10 add for 65132 begin*/
+#if defined(CONFIG_GN_Q_BSP_LCD_TPS65132_SUPPORT)
+	gpio_tlmm_config(tps_enable_gpio.pin_id, 0,
+			tps_enable_gpio.pin_direction, tps_enable_gpio.pin_pull,
+			tps_enable_gpio.pin_strength, tps_enable_gpio.pin_state);
+#endif
 
 	pm8x41_gpio_config(rst_gpio, &resetgpio_param);
 	if (enable) {
@@ -232,10 +301,21 @@ int target_panel_reset(uint8_t enable, struct panel_reset_sequence *resetseq,
 			enable_gpio.pin_strength, enable_gpio.pin_state);
 
 		gpio_set(enable_gpio.pin_id, resetseq->pin_direction);
+/*Gionee xiangzhong 2013-12-20 add for jdi cmd begin*/
+#if defined(CONFIG_GN_Q_BSP_LCD_JDI_R63419_SUPPORT) || defined(CONFIG_GN_Q_BSP_LCD_TRULY_R63419_SUPPORT) \
+		|| defined(CONFIG_GN_Q_BSP_LCD_SHARP_R63419_SUPPORT)
+#else
 		pm8x41_gpio_set(rst_gpio, resetseq->pin_state[0]);
 		mdelay(resetseq->sleep[0]);
 		pm8x41_gpio_set(rst_gpio, resetseq->pin_state[1]);
+#endif
+/*Gionee xiangzhong 2013-12-20 add for jdi cmd end*/
 		mdelay(resetseq->sleep[1]);
+/*Gionee xiangzhong 2014-04-10 add for 65132 begin*/
+#if defined(CONFIG_GN_Q_BSP_LCD_TPS65132_SUPPORT)
+		tps65132_power_on();
+#endif
+/*Gionee xiangzhong 2014-04-10 add for 65132 end*/
 		pm8x41_gpio_set(rst_gpio, resetseq->pin_state[2]);
 		mdelay(resetseq->sleep[2]);
 	} else {

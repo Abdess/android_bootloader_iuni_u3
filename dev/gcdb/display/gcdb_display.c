@@ -45,6 +45,13 @@
 #include "target/display.h"
 #include "gcdb_autopll.h"
 
+/*Gionee xiangzhong 2013-12-20 add for backlight lm3630 begin*/
+#if defined(CONFIG_GN_Q_BSP_BACKLIGHT_LM3630_SUPPORT)
+#include <i2c_qup.h>
+#include <blsp_qup.h>
+#endif
+/*Gionee xiangzhong 2013-12-20 add for backlight lm3630 end*/
+
 /*---------------------------------------------------------------------------*/
 /* static                                                                    */
 /*---------------------------------------------------------------------------*/
@@ -63,6 +70,45 @@ static uint32_t panel_backlight_ctrl(uint8_t enable)
 {
 	return target_backlight_ctrl(panelstruct.backlightinfo, enable);
 }
+
+/*Gionee xiangzhong 2013-12-20 add for backlight lm3630 begin*/
+#if defined(CONFIG_GN_Q_BSP_BACKLIGHT_LM3630_SUPPORT)
+#define GN_BACKLIGHT_DRIVER_IC_I2C_ADDRESS 0x36
+static struct qup_i2c_dev *gn_dev;
+static uint8_t gn_backlight_i2c_read(uint8_t addr)
+{
+	uint8_t ret = 0;
+	/* Create a i2c_msg buffer, that is used to put the controller into read
+	 * mode and then to read some data. */
+	struct i2c_msg msg_buf[] = {
+		{GN_BACKLIGHT_DRIVER_IC_I2C_ADDRESS, I2C_M_WR, 1, &addr},
+		{GN_BACKLIGHT_DRIVER_IC_I2C_ADDRESS, I2C_M_RD, 1, &ret}
+	};
+
+	qup_i2c_xfer(gn_dev, msg_buf, 2);
+
+	return ret;
+}
+
+static int gn_backlight_i2c_write(uint8_t addr, uint8_t val)
+{
+	uint8_t data_buf[] = { addr, val };
+	/* Create a i2c_msg buffer, that is used to put the controller into read
+	 * mode and then to write some data. */
+	struct i2c_msg msg_buf[] = { {GN_BACKLIGHT_DRIVER_IC_I2C_ADDRESS,
+					I2C_M_WR, 2, data_buf}
+	};
+
+	qup_i2c_xfer(gn_dev, msg_buf, 1);
+
+	/* Double check that the write worked. */
+	if (val != gn_backlight_i2c_read(addr))
+		return -1;
+
+	return 0;
+}
+#endif
+/*Gionee xiangzhong 2013-12-20 add for backlight lm3630 end*/
 
 static uint32_t mdss_dsi_panel_reset(uint8_t enable)
 {
@@ -145,6 +191,72 @@ static int mdss_dsi_panel_pre_init(void)
 	dprintf(SPEW, "Panel pre init done\n");
 	return ret;
 }
+
+/*Gionee xiangzhong 2013-12-20 add for backlight lm3630 begin*/
+#if defined(CONFIG_GN_Q_BSP_BACKLIGHT_LM3630_SUPPORT)
+static int mdss_dsi_bl_enable_lm3630(uint8_t enable)
+{
+	int ret;
+	gn_dev = qup_blsp_i2c_init(BLSP_ID_2, QUP_ID_4, 100000, 19200000);
+	if (!gn_dev) {
+		dprintf(CRITICAL, "Failed initializing I2C, yangyong\n");
+		return -1;
+	}
+
+	ret = gn_backlight_i2c_write(0x00, 0x11);
+	if (ret != 0) {
+		dprintf(CRITICAL, "%s:%d  I2C write failed\n", __func__, __LINE__);
+		return -1;
+	}
+
+	ret = gn_backlight_i2c_write(0x01, 0x09); //09 = enable cabc,08 = disable cabc
+	if (ret != 0) {
+		dprintf(CRITICAL, "%s:%d  I2C write failed \n", __func__, __LINE__);
+		return -1;
+	}
+
+	ret = gn_backlight_i2c_write(0x02, 0x33);
+	if (ret != 0) {
+		dprintf(CRITICAL, "%s:%d  I2C write failed\n", __func__, __LINE__);
+		return -1;
+	}
+
+	ret = gn_backlight_i2c_write(0x05, 0x14);
+	if (ret != 0) {
+		dprintf(CRITICAL, "%s:%d  I2C write failed\n", __func__, __LINE__);
+		return -1;
+	}
+
+	ret = gn_backlight_i2c_write(0x03, 0xfe);
+	if (ret != 0) {
+		dprintf(CRITICAL, "%s:%d  I2C write failed\n", __func__, __LINE__);
+		return -1;
+	}
+
+	ret = gn_backlight_i2c_write(0x00, 0x15);
+	if (ret != 0) {
+		dprintf(CRITICAL, "%s:%d  I2C write failed\n", __func__, __LINE__);
+		return -1;
+	}
+
+	dprintf(CRITICAL, "backlight on\n");
+	return ret;
+}
+#endif
+/*Gionee xiangzhong 2013-12-20 add for backlight lm3630 end*/
+
+/*Gionee xiangzhong 2014-05-29 add for lk splash logo begin*/
+#if defined(CONFIG_GN_Q_BSP_LCD_LK_SPLASH_SUPPORT)
+void enabld_backlight(void)
+{
+	int ret = 0;
+
+	ret = mdss_dsi_bl_enable_lm3630(1);
+	if(ret != 0)
+		dprintf(INFO, "backlight error\n");
+}
+#endif
+/*Gionee xiangzhong 2014-05-29 add for lk splash logo end*/
 
 static int mdss_dsi_bl_enable(uint8_t enable)
 {
@@ -280,7 +392,13 @@ int gcdb_display_init(uint32_t rev, void *base)
 	panel.pll_clk_func = mdss_dsi_panel_clock;
 	panel.power_func = mdss_dsi_panel_power;
 	panel.pre_init_func = mdss_dsi_panel_pre_init;
+/*Gionee xiangzhong 2013-12-20 add for backlight lm3630 begin*/
+#if defined(CONFIG_GN_Q_BSP_BACKLIGHT_LM3630_SUPPORT)
+	panel.bl_func = mdss_dsi_bl_enable_lm3630;
+#else
 	panel.bl_func = mdss_dsi_bl_enable;
+#endif
+/*Gionee xiangzhong 2013-12-20 add for backlight lm3630 end*/
 	panel.fb.base = base;
 	panel.fb.width =  panel.panel_info.xres;
 	panel.fb.height =  panel.panel_info.yres;

@@ -45,6 +45,21 @@ static struct gpio_pin enable_gpio = {
   "msmgpio", 58, 3, 1, 0, 1
 };
 
+/*Gionee xiangzhong 2014-04-10 add for tps65132 begin*/
+#if defined(CONFIG_GN_Q_BSP_LCD_TPS65132_SUPPORT)
+static struct gpio_pin tps_enable_gpio = {
+  "msmgpio", 46, 3, 1, 0, 1
+};
+#endif
+/*Gionee xiangzhong 2014-04-10 add for tps65132 end*/
+
+/*Gionee xiangzhong 2014-05-10 add for iovcc begin*/
+#if defined(CONFIG_GN_Q_BSP_LCD_IOVCC_CONTROL_SUPPORT)
+static struct gpio_pin iovcc_enable_gpio = {
+  "msmgpio", 53, 3, 1, 0, 1
+};
+#endif
+/*Gionee xiangzhong 2014-05-10 add for iovcc end*/
 static struct gpio_pin pwm_gpio = {
   "pm8941_gpios", 36, 3, 1, 0, 1
 };
