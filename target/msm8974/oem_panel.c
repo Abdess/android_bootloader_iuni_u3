@@ -46,7 +46,6 @@
 #include "include/panel_generic_720p_cmd.h"
 #include "include/panel_jdi_qhd_dualdsi_video.h"
 #include "include/panel_jdi_qhd_dualdsi_cmd.h"
-#include "target/display.h"
 /*Gionee xiangzhong 2013-12-20 add for jdi r63419 cmd begin*/
 #if defined(CONFIG_GN_Q_BSP_LCD_JDI_R63419_SUPPORT)
 #include "include/panel_jdi_r63419_wqhd_dualdsi_cmd.h"
@@ -109,6 +108,36 @@ GENERIC_720P_CMD_PANEL,
 JDI_QHD_DUALDSI_VIDEO_PANEL,
 JDI_QHD_DUALDSI_CMD_PANEL,
 UNKNOWN_PANEL
+};
+
+/*
+ * The list of panels that are supported on this target.
+ * Any panel in this list can be selected using fastboot oem command.
+ */
+/*Indie Abdessamad Derraz 2017-08-18 add for truly r63419 begin*/
+#if defined(CONFIG_GN_Q_BSP_LCD_TRULY_R63419_SUPPORT)
+	{"truly_r63419_wqhd_cmd", TRULY_R63419_WQHD_CMD_PANEL},
+	{"truly_r63419_wqhd_video", TRULY_R63419_WQHD_VIDEO_PANEL},
+#endif
+/*Indie Abdessamad Derraz 2017-08-18 add for truly r63419 end*/
+/*Indie Abdessamad Derraz 2017-08-18 add for sharp r63419 begin*/
+#if defined(CONFIG_GN_Q_BSP_LCD_SHARP_R63419_SUPPORT)
+	{"sharp_r63419_wqhd_cmd", SHARP_R63419_WQHD_CMD_PANEL},
+	{"sharp_r63419_wqhd_video", SHARP_R63419_WQHD_VIDEO_PANEL},
+#endif
+/*Indie Abdessamad Derraz 2017-08-18 add for sharp r63419 end*/
+/*Indie Abdessamad Derraz 2017-08-18 add for jdi r63419 begin*/
+#if defined(CONFIG_GN_Q_BSP_LCD_JDI_R63419_SUPPORT)
+	{"jdi_r63419_wqhd_cmd", JDI_R63419_WQHD_CMD_PANEL},
+#endif
+/*Indie Abdessamad Derraz 2017-08-18 add for jdi r63419 end*/
+static struct panel_list supp_panels[] = {
+	{"jdi_1080p_video", JDI_1080P_VIDEO_PANEL},
+	{"toshiba_720p_video", TOSHIBA_720P_VIDEO_PANEL},
+	{"sharp_qhd_video", SHARP_QHD_VIDEO_PANEL},
+	{"generic_720p_cmd", GENERIC_720P_CMD_PANEL},
+	{"jdi_qhd_dualdsi_video", JDI_QHD_DUALDSI_VIDEO_PANEL},
+	{"jdi_qhd_dualdsi_cmd", JDI_QHD_DUALDSI_CMD_PANEL},
 };
 
 static uint32_t panel_id;
@@ -447,13 +476,14 @@ static uint32_t auto_pan_loop = 0;
 #endif
 /*Gionee xiangzhong 2013-12-20 add for gionee lcd end*/
 
-bool oem_panel_select(struct panel_struct *panelstruct,
+bool oem_panel_select(const char *panel_name, struct panel_struct *panelstruct,
 			struct msm_panel_info *pinfo,
 			struct mdss_dsi_phy_ctrl *phy_db)
 {
 	uint32_t hw_id = board_hardware_id();
 	uint32_t target_id = board_target_id();
 	bool ret = true;
+	int32_t panel_override_id;
 
 /*Gionee xiangzhong 2014-05-30 add for iovcc begin*/
 #if defined(CONFIG_GN_Q_BSP_LCD_IOVCC_CONTROL_SUPPORT)
@@ -467,13 +497,29 @@ bool oem_panel_select(struct panel_struct *panelstruct,
 #endif
 /*Gionee xiangzhong 2013-12-21 add for lcd compatibility end*/
 
+	if (panel_name) {
+		panel_override_id = panel_name_to_id(supp_panels,
+				ARRAY_SIZE(supp_panels), panel_name);
+
+		if (panel_override_id < 0) {
+			dprintf(CRITICAL, "Not able to search the panel:%s\n",
+					 panel_name + strspn(panel_name, " "));
+		} else if (panel_override_id < UNKNOWN_PANEL) {
+			/* panel override using fastboot oem command */
+			panel_id = panel_override_id;
+
+			dprintf(INFO, "OEM panel override:%s\n",
+					panel_name + strspn(panel_name, " "));
+			goto panel_init;
+		}
+	}
+
 	switch (hw_id) {
 	case HW_PLATFORM_MTP:
 	case HW_PLATFORM_FLUID:
 	case HW_PLATFORM_SURF:
 		switch (auto_pan_loop) {
 		case 0:
-			dprintf(INFO, "auto_pan_loop\n");
 			panel_id = JDI_1080P_VIDEO_PANEL;
 			break;
 		case 1:
@@ -501,7 +547,7 @@ bool oem_panel_select(struct panel_struct *panelstruct,
 	{
 #if defined(CONFIG_GN_Q_BSP_LCD_SHARP_R63419_VIDEO_SUPPORT)
 		panel_id = SHARP_R63419_WQHD_VIDEO_PANEL;
-		dprintf(INFO, "LCD PANEL IS SYHARP WQHD VIDEO\n");
+		dprintf(INFO, "LCD PANEL IS SHARP WQHD VIDEO\n");
 #else
 		dprintf(INFO, "LCD PANEL IS SHARP WQHD CMD\n");
 		panel_id = SHARP_R63419_WQHD_CMD_PANEL;
@@ -531,6 +577,7 @@ bool oem_panel_select(struct panel_struct *panelstruct,
 		return false;
 	}
 
+panel_init:
 	init_panel_data(panelstruct, pinfo, phy_db);
 
 	return ret;

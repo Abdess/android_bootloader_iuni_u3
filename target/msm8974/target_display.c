@@ -43,9 +43,6 @@
 #include "include/panel.h"
 #include "include/display_resource.h"
 
-#include <i2c_qup.h>
-#include <blsp_qup.h>
-
 static struct msm_fb_panel_data panel;
 static uint8_t edp_enable;
 
@@ -72,40 +69,76 @@ static struct pm8x41_wled_data wled_ctrl = {
 	.full_current_scale = 0x19
 };
 
-static uint32_t dsi_pll_enable_seq(uint32_t ctl_base)
+static uint32_t dsi_pll_lock_status(uint32_t ctl_base)
 {
-	uint32_t rc = 0;
+	uint32_t counter, status;
 
+	udelay(100);
+	mdss_dsi_uniphy_pll_lock_detect_setting(ctl_base);
+
+	status = readl(ctl_base + 0x02c0) & 0x01;
+	for (counter = 0; counter < 5 && !status; counter++) {
+		udelay(100);
+		status = readl(ctl_base + 0x02c0) & 0x01;
+	}
+
+	return status;
+}
+
+static uint32_t dsi_pll_enable_seq_b(uint32_t ctl_base)
+{
 	mdss_dsi_uniphy_pll_sw_reset(ctl_base);
 
 	writel(0x01, ctl_base + 0x0220); /* GLB CFG */
-	mdelay(1);
+	udelay(1);
 	writel(0x05, ctl_base + 0x0220); /* GLB CFG */
-	mdelay(1);
+	udelay(200);
 	writel(0x07, ctl_base + 0x0220); /* GLB CFG */
-	mdelay(1);
+	udelay(500);
 	writel(0x0f, ctl_base + 0x0220); /* GLB CFG */
-	mdelay(1);
+	udelay(500);
 
-	mdss_dsi_uniphy_pll_lock_detect_setting(ctl_base);
+	return dsi_pll_lock_status(ctl_base);
+}
 
-	while (!(readl(ctl_base + 0x02c0) & 0x01)) {
-		mdss_dsi_uniphy_pll_sw_reset(ctl_base);
-		writel(0x01, ctl_base + 0x0220); /* GLB CFG */
-		mdelay(1);
-		writel(0x05, ctl_base + 0x0220); /* GLB CFG */
-		mdelay(1);
-		writel(0x07, ctl_base + 0x0220); /* GLB CFG */
-		mdelay(1);
-		writel(0x05, ctl_base + 0x0220); /* GLB CFG */
-		mdelay(1);
-		writel(0x07, ctl_base + 0x0220); /* GLB CFG */
-		mdelay(1);
-		writel(0x0f, ctl_base + 0x0220); /* GLB CFG */
-		mdelay(2);
-		mdss_dsi_uniphy_pll_lock_detect_setting(ctl_base);
+static uint32_t dsi_pll_enable_seq_d(uint32_t ctl_base)
+{
+	mdss_dsi_uniphy_pll_sw_reset(ctl_base);
+
+	writel(0x01, ctl_base + 0x0220); /* GLB CFG */
+	udelay(1);
+	writel(0x05, ctl_base + 0x0220); /* GLB CFG */
+	udelay(200);
+	writel(0x07, ctl_base + 0x0220); /* GLB CFG */
+	udelay(250);
+	writel(0x05, ctl_base + 0x0220); /* GLB CFG */
+	udelay(200);
+	writel(0x07, ctl_base + 0x0220); /* GLB CFG */
+	udelay(500);
+	writel(0x0f, ctl_base + 0x0220); /* GLB CFG */
+	udelay(500);
+
+	return dsi_pll_lock_status(ctl_base);
+}
+
+static void dsi_pll_enable_seq(uint32_t ctl_base)
+{
+	uint32_t counter, status;
+
+	for (counter = 0; counter < 3; counter++) {
+		status = dsi_pll_enable_seq_b(ctl_base);
+		if (status)
+			break;
+		status = dsi_pll_enable_seq_d(ctl_base);
+		if (status)
+			break;
+		status = dsi_pll_enable_seq_d(ctl_base);
+		if(status)
+			break;
 	}
-	return rc;
+
+	if (!status)
+		dprintf(CRITICAL, "Pll lock sequence failed\n");
 }
 
 static int msm8974_wled_backlight_ctrl(uint8_t enable)
@@ -199,11 +232,6 @@ int target_panel_clock(uint8_t enable, struct msm_panel_info *pinfo)
 		mdp_clock_init();
 		mdss_dsi_auto_pll_config(MIPI_DSI0_BASE, pll_data);
 		dsi_pll_enable_seq(MIPI_DSI0_BASE);
-		if (panel.panel_info.mipi.dual_dsi &&
-				!(panel.panel_info.mipi.broadcast)) {
-			mdss_dsi_auto_pll_config(MIPI_DSI1_BASE, pll_data);
-			dsi_pll_enable_seq(MIPI_DSI1_BASE);
-		}
 		mmss_clock_auto_pll_init(DSI0_PHY_PLL_OUT, dual_dsi,
 					pll_data->pclk_m,
 					pll_data->pclk_n,
@@ -284,7 +312,7 @@ int target_panel_reset(uint8_t enable, struct panel_reset_sequence *resetseq,
 #endif
  /*Gionee xiangzhong 2014-01-16 add for msm8974ac end*/
 
-	dprintf(INFO, "platform_id: %u, rst_gpio: %u\n",
+	dprintf(SPEW, "platform_id: %u, rst_gpio: %u\n",
 				platform_id, rst_gpio);
 
 /*Gionee xiangzhong 2014-04-10 add for 65132 begin*/
@@ -410,7 +438,7 @@ static int msm8974_edp_panel_power(int enable)
 	return 0;
 }
 
-void display_init(void)
+void target_display_init(const char *panel_name)
 {
 	uint32_t hw_id = board_hardware_id();
 	uint32_t panel_loop = 0;
@@ -433,20 +461,21 @@ void display_init(void)
 		break;
 	default:
 		do {
-			ret = gcdb_display_init(MDP_REV_50, MIPI_FB_ADDR);
+			target_force_cont_splash_disable(false);
+			ret = gcdb_display_init(panel_name, MDP_REV_50,
+				MIPI_FB_ADDR);
 			if (!ret || ret == ERR_NOT_SUPPORTED) {
 				break;
 			} else {
 				target_force_cont_splash_disable(true);
 				msm_display_off();
-				target_force_cont_splash_disable(false);
 			}
 		} while (++panel_loop <= oem_panel_max_auto_detect_panels());
 		break;
 	}
 }
 
-void display_shutdown(void)
+void target_display_shutdown(void)
 {
 	uint32_t hw_id = board_hardware_id();
 	switch (hw_id) {

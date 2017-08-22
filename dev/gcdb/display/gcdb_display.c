@@ -280,7 +280,7 @@ bool target_display_panel_node(char *pbuf, uint16_t buf_size)
 	char *default_str;
 	int panel_mode = SPLIT_DISPLAY_FLAG | DUAL_PIPE_FLAG;
 
-	if(panelstruct.paneldata)
+	if(panelstruct.paneldata && target_cont_splash_screen())
 	{
 		dsi_id = panelstruct.paneldata->panel_controller;
 		panel_node = panelstruct.paneldata->panel_node_id;
@@ -369,11 +369,11 @@ static void init_platform_data()
 	memcpy(dsi_video_mode_phy_db.laneCfg, panel_lane_config, LANE_SIZE);
 }
 
-int gcdb_display_init(uint32_t rev, void *base)
+int gcdb_display_init(const char *panel_name, uint32_t rev, void *base)
 {
 	int ret = NO_ERROR;
 
-	if (!oem_panel_select(&panelstruct, &(panel.panel_info),
+	if (!oem_panel_select(panel_name, &panelstruct, &(panel.panel_info),
 				 &dsi_video_mode_phy_db)) {
 		dprintf(CRITICAL, "Target panel init not found!\n");
 		ret = ERR_NOT_SUPPORTED;

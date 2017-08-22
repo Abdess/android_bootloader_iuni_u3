@@ -58,11 +58,14 @@ ifeq ($(SIGNED_KERNEL),1)
   CFLAGS += -D_SIGNED_KERNEL=1
 endif
 
-# When the host arch is ARM, ensure stack protection code is not emitted since
-# it's not supported by the bootloader's libc
-ifneq ($(shell uname -m | grep "arm.*"),)
-  CFLAGS += -fno-stack-protector
+ifeq ($(TARGET_BUILD_VARIANT),user)
+  CFLAGS += -DDISABLE_FASTBOOT_CMDS=1
 endif
+
+# setup toolchain prefix
+TOOLCHAIN_PREFIX ?= arm-eabi-
+CFLAGS += -fstack-protector-all
+CFLAGS += -fno-strict-overflow
 CPPFLAGS := -fno-exceptions -fno-rtti -fno-threadsafe-statics
 #CPPFLAGS += -Weffc++
 ASMFLAGS := -DASSEMBLY
@@ -96,6 +99,14 @@ DEFINES := LK=1
 # Anything added to SRCDEPS will become a dependency of every source file in the system.
 # Useful for header files that may be included by one or more source files.
 SRCDEPS := $(CONFIGHEADER)
+
+ifeq ($(VERIFIED_BOOT),1)
+  DEFINES += VERIFIED_BOOT=1
+  DEFINES += _SIGNED_KERNEL=1
+  ifeq ($(DEFAULT_UNLOCK),true)
+    DEFINES += DEFAULT_UNLOCK=1
+  endif
+endif
 
 # these need to be filled out by the project/target/platform rules.mk files
 TARGET :=

@@ -831,6 +831,8 @@ static uint32_t mmc_set_hs200_mode(struct sdhci_host *host,
 {
 	uint32_t mmc_ret = 0;
 
+	DBG("\n Enabling HS200 Mode Start\n");
+
 	/* Set 4/8 bit SDR bus width */
 	mmc_ret = mmc_set_bus_width(host, card, width);
 	if (mmc_ret) {
@@ -853,9 +855,15 @@ static uint32_t mmc_set_hs200_mode(struct sdhci_host *host,
 	/* Run the clock @ 400 Mhz */
 	if (host->caps.hs400_support && mmc_card_supports_hs400_mode(card))
 	{
-		clock_config_mmc(host->msm_host->slot, SDHCI_CLK_400MHZ);
 		/* Save the timing value, before changing the clock */
 		MMC_SAVE_TIMING(host, MMC_HS400_TIMING);
+		/*
+		* Set the MCI_CLK divider before changing the sdcc core
+		* core clk to ensure card receives no more than 200 MHZ
+		* clock frequency
+		*/
+		sdhci_msm_set_mci_clk(host);
+		clock_config_mmc(host->msm_host->slot, SDHCI_CLK_400MHZ);
 	}
 	else
 	{
@@ -866,6 +874,8 @@ static uint32_t mmc_set_hs200_mode(struct sdhci_host *host,
 	/* Execute Tuning for hs200 mode */
 	if ((mmc_ret = sdhci_msm_execute_tuning(host, width)))
 		dprintf(CRITICAL, "Tuning for hs200 failed\n");
+
+	DBG("\n Enabling HS200 Mode Done\n");
 
 	return mmc_ret;
 }
@@ -879,6 +889,8 @@ static uint32_t mmc_set_hs200_mode(struct sdhci_host *host,
 static uint8_t mmc_set_ddr_mode(struct sdhci_host *host, struct mmc_card *card)
 {
 	uint8_t mmc_ret = 0;
+
+	DBG("\n Enabling DDR Mode Start\n");
 
 	/* Set width for 8 bit DDR mode by default */
 	mmc_ret = mmc_set_bus_width(host, card, DATA_DDR_BUS_WIDTH_8BIT);
@@ -894,6 +906,8 @@ static uint8_t mmc_set_ddr_mode(struct sdhci_host *host, struct mmc_card *card)
 
 	/* Set the DDR mode in controller */
 	sdhci_set_uhs_mode(host, SDHCI_DDR50_MODE);
+
+	DBG("\n Enabling DDR Mode Done\n");
 
 	return 0;
 }
@@ -950,6 +964,7 @@ uint32_t mmc_set_hs400_mode(struct sdhci_host *host,
 	 * 4. Enable HS400 mode & execute tuning
 	 */
 
+	DBG("\n Enabling HS400 Mode Start\n");
 	/* HS400 mode is supported only in DDR 8-bit */
 	if (width != DATA_BUS_WIDTH_8BIT)
 	{
@@ -1002,10 +1017,16 @@ uint32_t mmc_set_hs400_mode(struct sdhci_host *host,
 	/* Save the timing value, before changing the clock */
 	MMC_SAVE_TIMING(host, MMC_HS400_TIMING);
 	sdhci_set_uhs_mode(host, SDHCI_SDR104_MODE);
+	/*
+	* Enable HS400 mode
+	*/
+	sdhci_msm_set_mci_clk(host);
 
 	/* 7. Execute Tuning for hs400 mode */
 	if ((mmc_ret = sdhci_msm_execute_tuning(host, width)))
 		dprintf(CRITICAL, "Tuning for hs400 failed\n");
+
+	DBG("\n Enabling HS400 Mode Done\n");
 
 	return mmc_ret;
 }
@@ -1050,6 +1071,12 @@ static uint8_t mmc_host_init(struct mmc_device *dev)
 	clock_init_mmc(cfg->slot);
 
 	clock_config_mmc(cfg->slot, cfg->max_clk_rate);
+
+	/* Configure the CDC clocks needed for emmc storage
+	 * we use slot '1' for emmc
+	 */
+	if (cfg->slot == 1)
+		clock_config_cdc(cfg->slot);
 
 	/*
 	 * MSM specific sdhc init
@@ -1677,78 +1704,6 @@ struct mmc_device *mmc_init(struct mmc_config_data *data)
 	return dev;
 }
 
-static uint32_t mmc_parse_response(uint32_t resp)
-{
-	/* Trying to write beyond card capacity */
-	if (resp & MMC_R1_ADDR_OUT_OF_RANGE) {
-		dprintf(CRITICAL, "Attempting to read or write beyond the Device capacity\n");
-		return 1;
-	}
-
-	/* Misaligned address not matching block length */
-	if (resp & MMC_R1_ADDR_ERR) {
-		dprintf(CRITICAL, "The misaligned address did not match the block length used\n");
-		return 1;
-	}
-
-	/* Invalid block length */
-	if (resp & MMC_R1_BLOCK_LEN_ERR) {
-		dprintf(CRITICAL, "The transferred bytes does not match the block length\n");
-		return 1;
-	}
-
-	/* Tried to program write protected block */
-	if (resp & MMC_R1_WP_VIOLATION) {
-		dprintf(CRITICAL, "Attempt to program a write protected block\n");
-		return 1;
-	}
-
-	/* card controller error */
-	if (resp & MMC_R1_CC_ERROR) {
-		dprintf(CRITICAL, "Device error occurred, which is not related to the host command\n");
-		return 1;
-	}
-
-	/* Generic error */
-	if (resp & MMC_R1_GENERIC_ERR) {
-		dprintf(CRITICAL, "A generic Device error\n");
-		return 1;
-	}
-
-	/* Finally check for card in TRAN state */
-	if (MMC_CARD_STATUS(resp) != MMC_TRAN_STATE) {
-		dprintf(CRITICAL, "MMC card is not in TRAN state\n");
-		return 1;
-	}
-
-	return 0;
-}
-
-static uint32_t mmc_stop_command(struct mmc_device *dev)
-{
-	struct mmc_command cmd;
-	uint32_t mmc_ret = 0;
-
-	memset((struct mmc_command *)&cmd, 0, sizeof(struct mmc_command));
-
-	cmd.cmd_index = CMD12_STOP_TRANSMISSION;
-	cmd.argument = (dev->card.rca << 16);
-	cmd.cmd_type = SDHCI_CMD_TYPE_NORMAL;
-	cmd.resp_type = SDHCI_CMD_RESP_R1;
-
-	mmc_ret = sdhci_send_command(&dev->host, &cmd);
-	if(mmc_ret)
-	{
-		dprintf(CRITICAL, "Failed to send stop command\n");
-		return mmc_ret;
-	}
-
-	/* Response contains 32 bit Card status.
-	 * Parse the errors & provide relevant information */
-
-	return mmc_parse_response(cmd.resp[0]);
-}
-
 /*
  * Function: mmc sdhci read
  * Arg     : mmc device structure, block address, number of blocks & destination
@@ -1772,7 +1727,16 @@ uint32_t mmc_sdhci_read(struct mmc_device *dev, void *dest,
 	else
 		cmd.cmd_index = CMD18_READ_MULTIPLE_BLOCK;
 
-	cmd.argument = blk_addr;
+	/*
+	 * Standard emmc cards use byte mode addressing
+	 * convert the block address to byte address before
+	 * sending the command
+	 */
+	if (card->type == MMC_TYPE_STD_MMC)
+		cmd.argument = blk_addr * card->block_size;
+	else
+		cmd.argument = blk_addr;
+
 	cmd.cmd_type = SDHCI_CMD_TYPE_NORMAL;
 	cmd.resp_type = SDHCI_CMD_RESP_R1;
 	cmd.trans_mode = SDHCI_MMC_READ;
@@ -1795,18 +1759,29 @@ uint32_t mmc_sdhci_read(struct mmc_device *dev, void *dest,
 
 	/* send command */
 	mmc_ret = sdhci_send_command(&dev->host, &cmd);
-
-	/* For multi block read failures send stop command */
-	if (mmc_ret && num_blocks > 1)
-	{
-		return mmc_stop_command(dev);
+	if (mmc_ret) {
+		return mmc_ret;
 	}
 
-	/*
-	 * Response contains 32 bit Card status.
-	 * Parse the errors & provide relevant information
-	 */
-	return mmc_parse_response(cmd.resp[0]);
+	/* Response contains 32 bit Card status. Here we'll check
+		BLOCK_LEN_ERROR and ADDRESS_ERROR */
+	if (cmd.resp[0] & MMC_R1_BLOCK_LEN_ERR) {
+		dprintf(CRITICAL, "The transferred bytes does not match the block length\n");
+		return 1;
+	}
+
+	/* Misaligned address not matching block length */
+	if (cmd.resp[0] & MMC_R1_ADDR_ERR) {
+		dprintf(CRITICAL, "The misaligned address did not match the block length used\n");
+		return 1;
+	}
+
+	if (MMC_CARD_STATUS(cmd.resp[0]) != MMC_TRAN_STATE) {
+		dprintf(CRITICAL, "MMC read failed, card is not in TRAN state\n");
+		return 1;
+	}
+
+	return mmc_ret;
 }
 
 /*
@@ -1833,7 +1808,16 @@ uint32_t mmc_sdhci_write(struct mmc_device *dev, void *src,
 	else
 		cmd.cmd_index = CMD25_WRITE_MULTIPLE_BLOCK;
 
-	cmd.argument = blk_addr;
+	/*
+	 * Standard emmc cards use byte mode addressing
+	 * convert the block address to byte address before
+	 * sending the command
+	 */
+	if (card->type == MMC_TYPE_STD_MMC)
+		cmd.argument = blk_addr * card->block_size;
+	else
+		cmd.argument = blk_addr;
+
 	cmd.cmd_type = SDHCI_CMD_TYPE_NORMAL;
 	cmd.resp_type = SDHCI_CMD_RESP_R1;
 	cmd.trans_mode = SDHCI_MMC_WRITE;
@@ -1856,18 +1840,28 @@ uint32_t mmc_sdhci_write(struct mmc_device *dev, void *src,
 
 	/* send command */
 	mmc_ret = sdhci_send_command(&dev->host, &cmd);
+	if (mmc_ret)
+		return mmc_ret;
 
-	/* For multi block write failures send stop command */
-	if (mmc_ret && num_blocks > 1)
-	{
-		return mmc_stop_command(dev);
+	/* Response contains 32 bit Card status. Here we'll check
+		BLOCK_LEN_ERROR and ADDRESS_ERROR */
+	if (cmd.resp[0] & MMC_R1_BLOCK_LEN_ERR) {
+		dprintf(CRITICAL, "The transferred bytes does not match the block length\n");
+		return 1;
 	}
 
-	/*
-	 * Response contains 32 bit Card status.
-	 * Parse the errors & provide relevant information
-	 */
-	return mmc_parse_response(cmd.resp[0]);
+	/* Misaligned address not matching block length */
+	if (cmd.resp[0] & MMC_R1_ADDR_ERR) {
+		dprintf(CRITICAL, "The misaligned address did not match the block length used\n");
+		return 1;
+	}
+
+	if (MMC_CARD_STATUS(cmd.resp[0]) != MMC_TRAN_STATE) {
+		dprintf(CRITICAL, "MMC read failed, card is not in TRAN state\n");
+		return 1;
+	}
+
+	return mmc_ret;
 }
 
 /*
@@ -1885,7 +1879,15 @@ static uint32_t mmc_send_erase_grp_start(struct mmc_device *dev, uint32_t erase_
 	else
 		cmd.cmd_index = CMD32_ERASE_WR_BLK_START;
 
-	cmd.argument = erase_start;
+	/*
+	 * Standard emmc cards use byte mode addressing
+	 * convert the block address to byte address before
+	 * sending the command
+	 */
+	if (card->type == MMC_TYPE_STD_MMC)
+		cmd.argument = erase_start * card->block_size;
+	else
+		cmd.argument = erase_start;
 	cmd.cmd_type = SDHCI_CMD_TYPE_NORMAL;
 	cmd.resp_type = SDHCI_CMD_RESP_R1;
 
@@ -1920,7 +1922,15 @@ static uint32_t mmc_send_erase_grp_end(struct mmc_device *dev, uint32_t erase_en
 	else
 		cmd.cmd_index = CMD33_ERASE_WR_BLK_END;
 
-	cmd.argument = erase_end;
+	/*
+	 * Standard emmc cards use byte mode addressing
+	 * convert the block address to byte address before
+	 * sending the command
+	 */
+	if (card->type == MMC_TYPE_STD_MMC)
+		cmd.argument = erase_end * card->block_size;
+	else
+		cmd.argument = erase_end;
 	cmd.cmd_type = SDHCI_CMD_TYPE_NORMAL;
 	cmd.resp_type = SDHCI_CMD_RESP_R1;
 
@@ -2249,24 +2259,4 @@ void mmc_put_card_to_sleep(struct mmc_device *dev)
 	/* send command */
 	if(sdhci_send_command(&dev->host, &cmd))
 		dprintf(CRITICAL, "card sleep error: %s\n", __func__);
-}
-
-uint32_t mmc_get_wp_size(struct mmc_device *dev)
-{
-	uint32_t wp_grp_size;
-	int ret = 0;
-
-	if(!dev) {
-		dprintf(CRITICAL, "MMC not initialised\n");
-		ASSERT(0);
-	}
-
-	/* Calculate the wp grp size */
-	if (dev->card.ext_csd[MMC_ERASE_GRP_DEF])
-		wp_grp_size = MMC_HC_ERASE_MULT * dev->card.ext_csd[MMC_HC_ERASE_GRP_SIZE] / MMC_BLK_SZ;
-	 else
-		wp_grp_size = (dev->card.csd.wp_grp_size + 1) * (dev->card.csd.erase_grp_size + 1) \
-					  * (dev->card.csd.erase_grp_mult + 1);
-
-	return (wp_grp_size * MMC_BLK_SZ);
 }

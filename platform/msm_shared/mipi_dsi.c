@@ -135,13 +135,8 @@ uint32_t mdss_dsi_read_panel_signature(uint32_t panel_signature)
 	data = ntohl(*lp);
 	data = data >> 8;
 	response_value = data;
-	dprintf(INFO, "data = %d\n");
-	dprintf(INFO, "data = %d\n",panel_signature);
 	if (response_value != panel_signature)
-		{
-		dprintf(INFO, "fffffffff\n");
-		//ret = response_value;
-		}
+		ret = response_value;
 
 exit_read_signature:
 	/* Keep the non detectable panel at the end and set panel signature 0xFFFF */
@@ -180,7 +175,7 @@ int mdss_dual_dsi_cmd_dma_trigger_for_panel()
 
 	writel((readl(MIPI_DSI1_BASE + INT_CTRL) | 0x01000001),
 			MIPI_DSI1_BASE + INT_CTRL);
-	dprintf(INFO, "Panel CMD: command mode dma tested successfully\n");
+	dprintf(SPEW, "Panel CMD: command mode dma tested successfully\n");
 #endif
 	return status;
 }
@@ -207,7 +202,7 @@ int dsi_cmd_dma_trigger_for_panel()
 	}
 
 	writel((readl(DSI_INT_CTRL) | 0x01000001), DSI_INT_CTRL);
-	dprintf(INFO, "Panel CMD: command mode dma tested successfully\n");
+	dprintf(SPEW, "Panel CMD: command mode dma tested successfully\n");
 	return status;
 }
 
@@ -422,7 +417,7 @@ static uint32_t mipi_novatek_manufacture_id(void)
 }
 
 int mdss_dsi_host_init(struct mipi_dsi_panel_config *pinfo, uint32_t
-		broadcast)
+		dual_dsi, uint32_t broadcast)
 {
 	uint8_t DMA_STREAM1 = 0;	// for mdp display processor path
 	uint8_t EMBED_MODE1 = 1;	// from frame buffer
@@ -456,7 +451,7 @@ int mdss_dsi_host_init(struct mipi_dsi_panel_config *pinfo, uint32_t
 	lane_swap = pinfo->lane_swap;
 	timing_ctl = ((pinfo->t_clk_post << 8) | pinfo->t_clk_pre);
 
-	if (broadcast) {
+	if (dual_dsi) {
 		writel(0x0001, MIPI_DSI1_BASE + SOFT_RESET);
 		writel(0x0000, MIPI_DSI1_BASE + SOFT_RESET);
 
@@ -1035,11 +1030,14 @@ int mdss_dsi_config(struct msm_fb_panel_data *panel)
 	if (pinfo->mipi.dual_dsi)
 		mdss_dsi_phy_init(&mipi_pinfo, MIPI_DSI1_BASE);
 
-	ret = mdss_dsi_host_init(&mipi_pinfo, pinfo->mipi.broadcast);
+	ret = mdss_dsi_host_init(&mipi_pinfo, pinfo->mipi.dual_dsi,
+						pinfo->mipi.broadcast);
 	if (ret) {
 		dprintf(CRITICAL, "dsi host init error\n");
 		goto error;
 	}
+
+	mdss_dsi_phy_contention_detection(&mipi_pinfo, MIPI_DSI0_BASE);
 
 	if (panel->pre_init_func) {
 		ret = panel->pre_init_func();
@@ -1217,6 +1215,7 @@ int mdss_dsi_cmd_mode_config(uint16_t disp_width,
 	writel(0x10000000, ctl_base + MISR_CMD_CTRL);
 	writel(0x1, ctl_base + EOT_PACKET_CTRL);
 #endif
+
 	return 0;
 }
 
